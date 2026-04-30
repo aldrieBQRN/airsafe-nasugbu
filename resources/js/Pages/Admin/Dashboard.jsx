@@ -1,138 +1,176 @@
-import React, { useState, useEffect } from 'react';
-import { Head } from '@inertiajs/react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Head, router, usePage } from '@inertiajs/react';
 import AdminLayout from '../../Layouts/AdminLayout';
 import {
     Activity, ThermometerSun, AlertTriangle, SignalHigh, Map as MapIcon,
-    RefreshCw, Cpu, HardDrive, Plug, Layers
+    Cpu, HardDrive, Wind
 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from 'recharts';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
-export default function Dashboard({ liveData }) {
-    const [currentTime, setCurrentTime] = useState(new Date());
+// Smooth animation that prevents the map from "shaking" on click
+function MapAutoCenter({ center }) {
+    const map = useMap();
+    const lastProcessedCenter = useRef(null);
 
     useEffect(() => {
-        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-        return () => clearInterval(timer);
-    }, []);
+        if (center && JSON.stringify(center) !== JSON.stringify(lastProcessedCenter.current)) {
+            const isMobile = window.innerWidth < 768;
+            const latOffset = isMobile ? 0.003 : 0.0015;
 
-    // Simulated data from your ESP32 devices
-    const data = liveData || {
-        tumalim: { aqi: 45, heat_index: 34, signal: 85 },
-        brgy7: { aqi: 112, heat_index: 39, signal: 92 }
-    };
+            const targetLat = parseFloat(center[0]) + latOffset;
+            const targetLng = parseFloat(center[1]);
 
-    const mapCenter = [14.0748, 120.6793];
-    const nodes = [
-        { id: 'tumalim', name: 'Barangay Tumalim', position: [14.0801, 120.7235], data: data.tumalim },
-        { id: 'brgy7', name: 'Barangay 7 (Poblacion)', position: [14.0694, 120.6351], data: data.brgy7 }
-    ];
+            lastProcessedCenter.current = center;
+            map.flyTo([targetLat, targetLng], 15, {
+                animate: true,
+                duration: 1.2,
+                easeLinearity: 0.25
+            });
+        }
+    }, [center, map]);
+    return null;
+}
 
-    // Simple Map Pin
-    const getCeramicPin = (aqi) => {
-        let color = 'bg-emerald-600';
-        let pulse = 'bg-emerald-400';
-        if (aqi > 100) { color = 'bg-rose-600'; pulse = 'bg-rose-400'; }
-        else if (aqi > 50) { color = 'bg-amber-500'; pulse = 'bg-amber-400'; }
+export default function Dashboard({ nodesData, chartData, recentLogs }) {
+    const { serverTime } = usePage().props;
 
+    // PERSISTENCE: Prevents "Gone then Show" flickering by keeping the last valid data in memory
+    const lastNodes = useRef(nodesData || []);
+    if (nodesData && nodesData.length > 0) { lastNodes.current = nodesData; }
+    const devices = lastNodes.current;
+
+    const lastChart = useRef(chartData || []);
+    if (chartData && chartData.length > 0) { lastChart.current = chartData; }
+    const stableChartData = lastChart.current;
+
+    const [timeOffset] = useState(() => {
+        const clientTime = new Date().getTime();
+        const trueServerTime = serverTime ? new Date(serverTime).getTime() : clientTime;
+        return trueServerTime - clientTime;
+    });
+
+    // FIXED: MUNICIPALITY-WIDE PEAK LOGIC (Includes Offline Nodes for Last Known Data)
+    const validNodes = devices.filter(d => d.sensors);
+
+    const peakAqiDevice = validNodes.length > 0
+        ? validNodes.reduce((prev, curr) => ((prev.sensors?.aqi || 0) > (curr.sensors?.aqi || 0) ? prev : curr))
+        : { name: 'No Data', sensors: { aqi: 0 }, status: 'offline' };
+
+    const peakHeatDevice = validNodes.length > 0
+        ? validNodes.reduce((prev, curr) => ((prev.sensors?.heat_index || 0) > (curr.sensors?.heat_index || 0) ? prev : curr))
+        : { name: 'No Data', sensors: { heat_index: 0 }, status: 'offline' };
+
+    const peakAqi = Math.round(peakAqiDevice.sensors?.aqi || 0);
+    const peakHeat = Number(peakHeatDevice.sensors?.heat_index || 0).toFixed(1);
+
+    // Tags the trend text with "(Last Known)" if the peak value belongs to an offline device
+    const aqiTrend = validNodes.length === 0 ? "No Data" : (peakAqiDevice.status === 'offline' ? `${peakAqiDevice.name} (Last Known)` : peakAqiDevice.name);
+    const heatTrend = validNodes.length === 0 ? "No Data" : (peakHeatDevice.status === 'offline' ? `${peakHeatDevice.name} (Last Known)` : peakHeatDevice.name);
+
+    const [currentTime, setCurrentTime] = useState(new Date(new Date().getTime() + timeOffset));
+    const [mapFocus, setMapFocus] = useState(null);
+
+    // Auto-focus map on the first device found
+    useEffect(() => {
+        if (devices.length > 0 && !mapFocus) {
+            setMapFocus([parseFloat(devices[0].latitude), parseFloat(devices[0].longitude)]);
+        }
+    }, [devices]);
+
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date(new Date().getTime() + timeOffset)), 1000);
+
+        // 1-Second Sync with overlapping protection
+        let isRefreshing = false;
+        const dataPoller = setInterval(() => {
+            if (isRefreshing) return;
+            isRefreshing = true;
+            router.reload({
+                only: ['nodesData', 'chartData', 'recentLogs'],
+                preserveState: true,
+                preserveScroll: true,
+                onFinish: () => { isRefreshing = false; }
+            });
+        }, 1000);
+
+        return () => { clearInterval(timer); clearInterval(dataPoller); };
+    }, [timeOffset]);
+
+    const getCeramicPin = (aqi, isOffline) => {
+        let color = isOffline ? 'bg-stone-400' : (aqi > 100 ? 'bg-rose-600' : (aqi > 50 ? 'bg-amber-500' : 'bg-emerald-600'));
         return L.divIcon({
             className: 'clear-marker',
-            html: `
-                <div class="relative flex items-center justify-center w-6 h-6">
-                    <div class="absolute inset-0 rounded-full opacity-40 animate-ping ${pulse}"></div>
-                    <div class="w-3.5 h-3.5 rounded-full ${color} ring-[3px] ring-white shadow-sm z-10"></div>
-                </div>
-            `,
+            html: `<div class="w-4 h-4 rounded-full ${color} ring-[3px] ring-white shadow-sm transition-transform hover:scale-110"></div>`,
             iconSize: [24, 24],
-            iconAnchor: [12, 12],
-            popupAnchor: [0, -12]
+            iconAnchor: [12, 12]
         });
     };
 
     return (
         <AdminLayout>
-            <Head title="AirSafe Dashboard" />
+            <Head title="TRIVORA Dashboard" />
 
-            {/* Simple Header */}
-            <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div className="mb-6 md:mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-5">
                 <div>
-                    <div className="flex items-center gap-3 mb-2">
-                        <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Live Connection Active</span>
+                    <div className="flex items-center gap-2.5 mb-2">
+                        <span className={`h-2 w-2 rounded-full ${devices.some(d => d.status === 'online') ? 'bg-emerald-500 animate-pulse' : 'bg-stone-400'}`}></span>
+                        <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-stone-500">Live Municipality Telemetry</span>
                     </div>
-                    <h1 className="text-4xl font-black text-stone-900 tracking-tight">Nasugbu Monitoring</h1>
+                    <h1 className="text-3xl md:text-4xl font-black text-stone-900 tracking-tighter leading-none">Nasugbu Monitoring</h1>
                 </div>
-                <div className="flex items-center gap-5">
-                    <div className="text-right">
-                        <div className="text-2xl font-bold text-stone-800 tabular-nums leading-none mb-1">
-                            {currentTime.toLocaleTimeString('en-US', { hour12: false })}
-                        </div>
-                        <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Time</span>
+
+                <div className="flex items-center justify-between md:justify-end gap-5 bg-white md:bg-transparent p-4 md:p-0 rounded-2xl border md:border-none border-stone-200 w-full md:w-auto">
+                    <div className="text-left md:text-right">
+                        <div className="text-base md:text-xl font-bold text-stone-800 tabular-nums leading-none mb-1">{currentTime.toLocaleDateString()}</div>
+                        <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest">System Date</span>
                     </div>
-                    <div className="h-10 w-px bg-stone-200"></div>
-                    <div className="px-4 py-2 bg-white rounded-full border border-stone-200 shadow-sm flex items-center gap-2">
-                        <RefreshCw size={14} className="text-stone-500 animate-spin-slow" style={{animationDuration: '4s'}}/>
-                        <span className="text-xs font-bold text-stone-600">Updating Live</span>
+                    <div className="h-8 w-px bg-stone-200"></div>
+                    <div className="text-right">
+                        <div className="text-base md:text-xl font-bold text-stone-800 tabular-nums leading-none mb-1">{currentTime.toLocaleTimeString()}</div>
+                        <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest">Real-Time</span>
                     </div>
                 </div>
             </div>
 
-            {/* Quick Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mb-8">
-                <EditorialMetric title="Average Air Quality" value="78" unit="Moderate" icon={Activity} color="emerald" trend="Normal" />
-                <EditorialMetric title="Highest Heat Index" value="39°" unit="Warning" icon={ThermometerSun} color="rose" isAlert={true} trend="Hot" />
-                <EditorialMetric title="Active Sensors" value="2/2" unit="Online" icon={SignalHigh} color="stone" trend="100%" />
-                <EditorialMetric title="Active Alerts" value="1" unit="Area" icon={AlertTriangle} color="amber" isAlert={true} trend="Check Map" />
+            {/* Metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+                <EditorialMetric title="Peak Pollution" value={peakAqi} unit="AQI" icon={Wind} color={peakAqi > 100 ? "rose" : "emerald"} trend={aqiTrend} />
+                <EditorialMetric title="Highest Heat" value={`${peakHeat}°`} unit="C" icon={ThermometerSun} color={parseFloat(peakHeat) > 38 ? "rose" : "emerald"} isAlert={parseFloat(peakHeat) > 38} trend={heatTrend} />
+                <EditorialMetric title="Network Status" value={devices.filter(d => d.status === 'online').length + '/' + devices.length} unit="Online" icon={SignalHigh} color="stone" trend="Nodes Active" />
+                <EditorialMetric title="Active Alerts" value={devices.filter(d => d.status === 'online' && (d.sensors.aqi > 100 || d.sensors.heat_index > 38)).length} unit="Areas" icon={AlertTriangle} color="amber" trend="Status Check" />
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-
-                {/* Center Map and Chart Column */}
-                <div className="xl:col-span-2 space-y-8">
-
-                    {/* Map Box */}
-                    <div className="bg-white p-2 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-stone-200/60 flex flex-col relative h-[500px]">
-
-                        <div className="absolute top-6 left-6 z-[400] bg-white/90 backdrop-blur-md px-4 py-2 rounded-full shadow-sm border border-stone-100 flex items-center gap-2">
-                            <MapIcon size={16} className="text-stone-600" />
-                            <h2 className="font-bold text-sm text-stone-800">Live Sensor Map</h2>
-                        </div>
-
-                        <div className="absolute top-6 right-6 z-[400] bg-white/90 backdrop-blur-md p-1.5 rounded-2xl shadow-sm border border-stone-100 flex flex-col gap-1">
-                            <button className="p-2 bg-stone-100 rounded-xl text-stone-800 hover:bg-stone-200 transition-colors" title="Air Quality View">
-                                <Layers size={16} />
-                            </button>
-                            <button className="p-2 bg-transparent rounded-xl text-stone-400 hover:text-stone-800 transition-colors" title="Heat View">
-                                <ThermometerSun size={16} />
-                            </button>
-                        </div>
-
-                        <div className="rounded-[1.5rem] overflow-hidden w-full h-full relative z-0">
-                            <MapContainer center={mapCenter} zoom={12} zoomControl={false} scrollWheelZoom={true} style={{ height: '100%', width: '100%', backgroundColor: '#F7F7F5' }}>
-                                <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" attribution="&copy; OpenStreetMap" />
-                                {nodes.map(node => (
-                                    <Marker key={node.id} position={node.position} icon={getCeramicPin(node.data.aqi)}>
-                                        <Popup className="rounded-2xl shadow-xl border-0 overflow-hidden p-0 m-0">
-                                            <div className="font-sans min-w-[240px] bg-white">
-                                                <div className="bg-stone-50 border-b border-stone-100 px-5 py-3">
-                                                    <strong className="block text-sm text-stone-800 font-bold">{node.name}</strong>
+                <div className="xl:col-span-2">
+                    <div className="bg-white p-2 rounded-[2.5rem] shadow-sm border border-stone-200/60 h-[500px] relative overflow-hidden">
+                        <div className="rounded-[2rem] overflow-hidden h-full">
+                            <MapContainer center={[14.0748, 120.6793]} zoom={13} zoomControl={false} style={{ height: '100%', width: '100%' }}>
+                                <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
+                                <MapAutoCenter center={mapFocus} />
+                                {devices.map(node => (
+                                    <Marker
+                                        key={node.id}
+                                        position={[parseFloat(node.latitude), parseFloat(node.longitude)]}
+                                        icon={getCeramicPin(node.sensors?.aqi || 0, node.status === 'offline')}
+                                        eventHandlers={{ click: () => setMapFocus([parseFloat(node.latitude), parseFloat(node.longitude)]) }}
+                                    >
+                                        <Popup autoPan={false} className="rounded-xl overflow-hidden">
+                                            <div className="p-4 min-w-[200px]">
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <h3 className="font-black text-stone-900 text-xs">{node.name}</h3>
+                                                    {node.status === 'offline' && <span className="text-[8px] font-bold text-stone-400 uppercase">Offline</span>}
                                                 </div>
-                                                <div className="p-5 space-y-5">
-                                                    <div>
-                                                        <div className="flex justify-between text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-2">
-                                                            <span>Air Pollution (AQI)</span>
-                                                            <span className={node.data.aqi > 100 ? 'text-rose-600' : 'text-emerald-600'}>{node.data.aqi}</span>
-                                                        </div>
-                                                        <div className="w-full bg-stone-100 rounded-full h-1.5"><div className={`h-1.5 rounded-full ${node.data.aqi > 100 ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(node.data.aqi, 100)}%` }}></div></div>
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between text-[10px] font-bold uppercase">
+                                                        <span className="text-stone-400 tracking-widest">Air Quality</span>
+                                                        <span className={node.status === 'offline' ? 'text-stone-400' : 'text-emerald-600'}>{Math.round(node.sensors?.aqi || 0)} AQI</span>
                                                     </div>
-                                                    <div>
-                                                        <div className="flex justify-between text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-2">
-                                                            <span>Heat Index</span>
-                                                            <span className="text-amber-500">{node.data.heat_index}°C</span>
-                                                        </div>
-                                                        <div className="w-full bg-stone-100 rounded-full h-1.5"><div className="h-1.5 rounded-full bg-amber-400" style={{ width: `${(node.data.heat_index / 50) * 100}%` }}></div></div>
+                                                    <div className="flex justify-between text-[10px] font-bold uppercase">
+                                                        <span className="text-stone-400 tracking-widest">Heat Index</span>
+                                                        <span className={node.status === 'offline' ? 'text-stone-400' : 'text-amber-500'}>{Number(node.sensors?.heat_index || 0).toFixed(1)}°C</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -142,39 +180,37 @@ export default function Dashboard({ liveData }) {
                             </MapContainer>
                         </div>
                     </div>
-
-                    <CeramicAnalyticsChart />
                 </div>
 
-                {/* Right Column: Device Status & Logs */}
-                <div className="space-y-8 flex flex-col">
-
-                    {/* Device Status Box */}
-                    <div className="bg-white rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-stone-200/60 p-6">
-                        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-stone-100">
-                            <div className="p-2 bg-stone-50 border border-stone-100 rounded-xl text-stone-600"><Cpu size={18} /></div>
-                            <h2 className="font-bold text-stone-800 tracking-tight">Sensor Device Health</h2>
-                        </div>
-                        <div className="space-y-4">
-                            <SpecSheetCard name="Tumalim Sensor" data={data.tumalim} />
-                            <SpecSheetCard name="Brgy 7 Sensor" data={data.brgy7} />
+                <div className="xl:col-span-1">
+                    <div className="bg-white rounded-[2.5rem] border border-stone-200/60 p-7 h-[500px] flex flex-col">
+                        <h2 className="font-bold text-stone-800 uppercase text-xs tracking-widest mb-6 border-b pb-4">Hardware Inventory</h2>
+                        <div className="space-y-4 overflow-y-auto custom-scrollbar flex-1">
+                            {devices.map(node => (
+                                <SpecSheetCard key={node.id} name={node.name} data={node.sensors} isOffline={node.status === 'offline'} signal={node.signal} />
+                            ))}
                         </div>
                     </div>
+                </div>
 
-                    {/* Simple Activity Log */}
-                    <div className="bg-white rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-stone-200/60 p-6 flex-1">
-                        <div className="flex items-center justify-between mb-6 pb-4 border-b border-stone-100">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-stone-50 border border-stone-100 rounded-xl text-stone-600"><HardDrive size={18} /></div>
-                                <h2 className="font-bold text-stone-800 tracking-tight">Recent Activity</h2>
-                            </div>
-                        </div>
-                        <div className="space-y-5">
-                            {data.brgy7.aqi > 100 && (
-                                <LogEntry time="10 mins ago" location="Brgy 7" message="Air quality reached dangerous levels. Automated text message sent to Brgy Captain." isAlert={true} />
+                <div className="xl:col-span-2">
+                    <CeramicAnalyticsChart chartData={stableChartData} devices={devices} height="h-[420px]" />
+                </div>
+
+                <div className="xl:col-span-1">
+                    <div className="bg-white rounded-[2.5rem] border border-stone-200/60 p-7 h-[420px] flex flex-col">
+                        <h2 className="font-bold text-stone-800 uppercase text-xs tracking-widest mb-6 border-b pb-4">Activity Log</h2>
+                        <div className="space-y-5 overflow-y-auto flex-1">
+                            {recentLogs && recentLogs.length > 0 ? recentLogs.map((log, i) => (
+                                <LogEntry key={i} time={log.time} location={log.sensor} message={log.message} isAlert={log.isAlert} />
+                            )) : (
+                                <>
+                                    <LogEntry time="Live" location="System" message="Real-time telemetry link operational." />
+                                    {devices.filter(d => d.status === 'offline').map(d => (
+                                        <LogEntry key={d.id} time="Warning" location={d.name} message="Gateway connection lost." isAlert />
+                                    ))}
+                                </>
                             )}
-                            <LogEntry time="1 hour ago" location="Tumalim" message="Heat index cooled down. Safety warning removed." isAlert={false} />
-                            <LogEntry time="3 hours ago" location="System" message="All sensors successfully connected to the internet via SIM network." isAlert={false} />
                         </div>
                     </div>
                 </div>
@@ -183,70 +219,89 @@ export default function Dashboard({ liveData }) {
     );
 }
 
-// ==========================================
-// SIMPLE SUB-COMPONENTS
-// ==========================================
+function CeramicAnalyticsChart({ chartData, devices, height }) {
+    const formattedData = useMemo(() => {
+        if (!chartData || chartData.length === 0) return [];
+        return chartData.map(entry => {
+            const transformed = { ...entry };
+            devices.forEach(device => {
+                transformed[`${device.name} - AQI`] = entry.aqi || 0;
+                transformed[`${device.name} - Heat Index`] = entry.heat_index || 0;
+            });
+            return transformed;
+        });
+    }, [chartData, devices]);
 
-function EditorialMetric({ title, value, unit, icon: Icon, color, isAlert, trend }) {
-    const colorMap = {
-        stone: 'text-stone-600',
-        emerald: 'text-emerald-600',
-        rose: 'text-rose-600',
-        amber: 'text-amber-500'
-    };
+    const aqiColors = ['#e11d48', '#3b82f6'];
+    const heatColors = ['#f59e0b', '#10b981'];
 
     return (
-        <div className="bg-white p-6 rounded-3xl shadow-[0_4px_15px_rgba(0,0,0,0.02)] border border-stone-200/50 hover:border-stone-300 transition-all group">
-            <div className="flex justify-between items-start mb-6">
-                <Icon size={22} strokeWidth={2} className={`${colorMap[color]} group-hover:scale-110 transition-transform`} />
-                <span className="text-[10px] font-bold text-stone-400 bg-stone-50 px-2 py-1 rounded-md border border-stone-100">{trend}</span>
+        <div className={`bg-white p-8 rounded-[2.5rem] border border-stone-200/60 ${height} flex flex-col`}>
+            <div className="mb-6">
+                <h2 className="font-black text-stone-900 text-lg uppercase tracking-widest leading-none">Active Telemetry</h2>
+                <p className="text-[10px] font-bold text-stone-400 uppercase italic mt-1">24-Hour Database Stream</p>
             </div>
-            <div>
-                <div className="flex items-baseline gap-2 mb-1">
-                    <h3 className="text-4xl font-black text-stone-900 tracking-tight">{value}</h3>
-                    <span className={`text-[10px] font-bold uppercase tracking-widest ${isAlert ? 'text-rose-500' : 'text-stone-400'}`}>{unit}</span>
-                </div>
-                <p className="text-sm font-semibold text-stone-500">{title}</p>
+            <div className="flex-1 -ml-4">
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={formattedData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f4" />
+                        <XAxis dataKey="time" tick={{ fill: '#a8a29e', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: '#a8a29e', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} width={35} />
+                        <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e7e5e4', fontSize: '10px' }} />
+                        <ReferenceLine y={100} stroke="#e11d48" strokeDasharray="3 3" label={{ position: 'top', value: 'AQI LIMIT', fill: '#e11d48', fontSize: 8 }} />
+                        <ReferenceLine y={38} stroke="#f59e0b" strokeDasharray="3 3" label={{ position: 'bottom', value: 'HEAT LIMIT', fill: '#f59e0b', fontSize: 8 }} />
+                        {devices.map((device, idx) => [
+                            <Area key={`${device.id}-aqi`} dataKey={`${device.name} - AQI`} stroke={aqiColors[idx % 2]} fill={aqiColors[idx % 2]} fillOpacity={0.05} strokeWidth={2} isAnimationActive={false} connectNulls={true} />,
+                            <Area key={`${device.id}-heat`} dataKey={`${device.name} - Heat Index`} stroke={heatColors[idx % 2]} fill={heatColors[idx % 2]} fillOpacity={0.05} strokeWidth={2} isAnimationActive={false} connectNulls={true} />
+                        ])}
+                        <Legend iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', paddingTop: '20px' }} />
+                    </AreaChart>
+                </ResponsiveContainer>
             </div>
         </div>
     );
 }
 
-function SpecSheetCard({ name, data }) {
-    const isDanger = data.aqi > 100;
+function EditorialMetric({ title, value, unit, icon: Icon, color, trend }) {
+    const colorMap = { emerald: 'text-emerald-600', rose: 'text-rose-600', stone: 'text-stone-400', amber: 'text-amber-500' };
     return (
-        <div className="p-4 bg-[#F7F7F5] rounded-2xl border border-stone-200/80 hover:bg-white hover:shadow-sm transition-all cursor-pointer">
-            <div className="flex justify-between items-center mb-4">
-                <h4 className="font-bold text-sm text-stone-900">{name}</h4>
-                <div className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${isDanger ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                    {isDanger ? 'Warning' : 'Normal'}
+        <div className="bg-white p-6 rounded-[2rem] border border-stone-200/50 shadow-sm transition-all hover:border-stone-300">
+            <div className="flex justify-between items-start mb-6">
+                <Icon size={20} className={colorMap[color]} />
+                <span className="text-[9px] font-black tracking-widest text-stone-400 uppercase bg-stone-50 px-2 py-1 rounded border border-stone-100">{trend}</span>
+            </div>
+            <div className="flex items-baseline gap-2 mb-1">
+                <h3 className="text-4xl font-black text-stone-900 tracking-tighter leading-none">{value}</h3>
+                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{unit}</span>
+            </div>
+            <p className="text-[11px] font-bold text-stone-500 uppercase tracking-wide">{title}</p>
+        </div>
+    );
+}
+
+function SpecSheetCard({ name, data, isOffline, signal }) {
+    return (
+        <div className={`p-4 rounded-2xl border transition-all ${isOffline ? 'bg-stone-50 grayscale' : 'bg-stone-50/50 hover:bg-white hover:shadow-sm'}`}>
+            <div className="flex justify-between items-center mb-3">
+                <h4 className="font-black text-[10px] uppercase text-stone-900 truncate pr-4">{name}</h4>
+                <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border ${isOffline ? 'bg-stone-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>{isOffline ? 'OFF' : 'ON'}</div>
+            </div>
+            <div className="grid grid-cols-2 gap-px bg-stone-200 rounded-xl overflow-hidden border border-stone-200 mb-3">
+                <div className="bg-white p-2 text-center">
+                    <span className="text-[7px] font-bold text-stone-400 uppercase block">AQI</span>
+                    {/* FIXED: Displays value directly, relying on grayscale to indicate offline status */}
+                    <strong className={`text-lg font-black ${isOffline ? 'text-stone-400' : 'text-stone-800'}`}>{Math.round(data?.aqi || 0)}</strong>
+                </div>
+                <div className="bg-white p-2 text-center">
+                    <span className="text-[7px] font-bold text-stone-400 uppercase block">HEAT</span>
+                    <strong className={`text-lg font-black ${isOffline ? 'text-stone-400' : 'text-amber-500'}`}>{Number(data?.heat_index || 0).toFixed(1)}</strong>
                 </div>
             </div>
-
-            {/* Simple Metrics */}
-            <div className="grid grid-cols-2 gap-px bg-stone-200 rounded-xl overflow-hidden mb-3 border border-stone-200">
-                <div className="bg-white p-3">
-                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block mb-1">Air Quality</span>
-                    <strong className={`text-xl leading-none font-black ${isDanger ? 'text-rose-600' : 'text-stone-800'}`}>{data.aqi}</strong>
+            <div className="flex items-center gap-3 px-1">
+                <div className="flex-1 bg-stone-200 h-1 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-500" style={{ width: `${isOffline ? 0 : (signal || 90)}%` }}></div>
                 </div>
-                <div className="bg-white p-3">
-                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block mb-1">Heat Index</span>
-                    <strong className="text-xl leading-none font-black text-amber-600">{data.heat_index}°C</strong>
-                </div>
-            </div>
-
-            {/* Direct Power & Cellular SIM Bars */}
-            <div className="flex gap-4 px-1 pt-2">
-                <div className="flex-1 flex items-center gap-2" title="Power Source">
-                    <Plug size={14} className="text-emerald-600" />
-                    <span className="text-[10px] font-bold text-stone-500 uppercase tracking-widest mt-0.5">Grid AC Power</span>
-                </div>
-                <div className="flex-1 flex items-center gap-2" title="Cellular Signal">
-                    <SignalHigh size={14} className="text-blue-600" />
-                    <div className="flex-1 bg-stone-200 h-1.5 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${data.signal || 85}%` }}></div>
-                    </div>
-                </div>
+                <span className="text-[8px] font-black text-stone-400">{isOffline ? '0%' : (signal || 90) + '%'}</span>
             </div>
         </div>
     );
@@ -254,65 +309,14 @@ function SpecSheetCard({ name, data }) {
 
 function LogEntry({ time, location, message, isAlert }) {
     return (
-        <div className="flex gap-4 group">
-            <div className={`mt-1.5 flex-shrink-0 w-2 h-2 rounded-full ${isAlert ? 'bg-rose-500 shadow-[0_0_8px_rgba(225,29,72,0.6)]' : 'bg-stone-300'}`}></div>
+        <div className="flex gap-4 items-start">
+            <div className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${isAlert ? 'bg-rose-500 shadow-[0_0_8px_rgba(225,29,72,0.6)]' : 'bg-stone-300'}`}></div>
             <div>
-                <div className="flex items-center gap-2 mb-1">
-                    <strong className="text-sm text-stone-900 tracking-tight">{location}</strong>
-                    <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest">{time}</span>
+                <div className="flex items-center gap-2 mb-0.5">
+                    <strong className="text-[11px] font-black text-stone-900 tracking-tight uppercase leading-none">{location}</strong>
+                    <span className="text-[8px] font-bold text-stone-400 uppercase">{time}</span>
                 </div>
-                <p className="text-xs text-stone-500 leading-relaxed font-medium">{message}</p>
-            </div>
-        </div>
-    );
-}
-
-const chartData = [
-    { time: '00:00', tumalimAqi: 40, brgy7Aqi: 55 },
-    { time: '04:00', tumalimAqi: 42, brgy7Aqi: 62 },
-    { time: '08:00', tumalimAqi: 48, brgy7Aqi: 85 },
-    { time: '12:00', tumalimAqi: 55, brgy7Aqi: 115 }, // Peak Pollution Time
-    { time: '16:00', tumalimAqi: 50, brgy7Aqi: 95 },
-    { time: '20:00', tumalimAqi: 46, brgy7Aqi: 75 },
-    { time: '24:00', tumalimAqi: 42, brgy7Aqi: 60 },
-];
-
-function CeramicAnalyticsChart() {
-    return (
-        <div className="bg-white p-8 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-stone-200/60">
-            <div className="flex justify-between items-center mb-8">
-                <div>
-                    <h2 className="font-bold text-stone-800 text-lg tracking-tight">24-Hour Air Quality History</h2>
-                    <p className="text-[11px] font-bold uppercase tracking-widest text-stone-400 mt-1">Recorded pollution levels over time</p>
-                </div>
-            </div>
-            <div className="h-[260px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <defs>
-                            <linearGradient id="sageGreen" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#059669" stopOpacity={0.15}/>
-                                <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
-                            </linearGradient>
-                            <linearGradient id="terracotta" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#e11d48" stopOpacity={0.15}/>
-                                <stop offset="95%" stopColor="#e11d48" stopOpacity={0}/>
-                            </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f4" />
-                        <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#a8a29e', fontSize: 11, fontWeight: 'bold' }} dy={10} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#a8a29e', fontSize: 11, fontWeight: 'bold' }} />
-                        <Tooltip
-                            contentStyle={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e7e5e4', boxShadow: '0 10px 40px -10px rgba(0,0,0,0.08)' }}
-                            itemStyle={{ fontWeight: 'bold', color: '#1c1917' }}
-                            labelStyle={{ color: '#78716c', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}
-                        />
-                        <ReferenceLine y={100} stroke="#e11d48" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'DANGER ZONE', fill: '#e11d48', fontSize: 10, fontWeight: 800 }} />
-
-                        <Area type="monotone" dataKey="brgy7Aqi" name="Brgy 7" stroke="#e11d48" strokeWidth={3} fillOpacity={1} fill="url(#terracotta)" activeDot={{ r: 5, strokeWidth: 0, fill: '#e11d48' }} />
-                        <Area type="monotone" dataKey="tumalimAqi" name="Tumalim" stroke="#059669" strokeWidth={3} fillOpacity={1} fill="url(#sageGreen)" activeDot={{ r: 5, strokeWidth: 0, fill: '#059669' }} />
-                    </AreaChart>
-                </ResponsiveContainer>
+                <p className="text-[10px] text-stone-500 leading-relaxed font-medium">{message}</p>
             </div>
         </div>
     );

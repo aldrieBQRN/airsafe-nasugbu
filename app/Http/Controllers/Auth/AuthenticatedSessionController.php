@@ -30,10 +30,15 @@ class AuthenticatedSessionController extends Controller
     public function store(LoginRequest $request): RedirectResponse
     {
         $request->authenticate();
-
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        // FIXED: Use direct redirect() instead of intended() to clear session memory
+        if ($request->user()->role === 'admin') {
+            return redirect()->route('admin.dashboard');
+        }
+
+        // This will now correctly force officials to /barangay-panel/dashboard
+        return redirect()->route('barangay.dashboard');
     }
 
     /**
@@ -47,6 +52,7 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerateToken();
 
-        return redirect('/');
+        // FIX: Redirect directly back to the login page instead of the public home page
+        return redirect('/login');
     }
 }

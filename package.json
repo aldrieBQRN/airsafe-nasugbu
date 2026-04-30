@@ -26,6 +26,7 @@
         "leaflet": "^1.9.4",
         "lucide-react": "^0.577.0",
         "react-leaflet": "^4.2.1",
-        "recharts": "^3.8.0"
+        "recharts": "^3.8.0",
+        "sweetalert2": "^11.26.24"
     }
 }

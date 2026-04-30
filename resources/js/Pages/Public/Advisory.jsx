@@ -1,21 +1,35 @@
-import React, { useState } from 'react';
-import { Head, Link } from '@inertiajs/react';
+import React, { useState, useEffect } from 'react';
+import { Head, Link, router } from '@inertiajs/react';
 import {
     Wind, ThermometerSun, MapPin, PhoneCall,
     AlertCircle, CheckCircle2, Info, Navigation,
-    ArrowRight, ShieldCheck, Zap, SignalHigh, AlertTriangle, LogIn
+    ArrowRight, ShieldCheck, Zap, SignalHigh, AlertTriangle, LogIn, WifiOff
 } from 'lucide-react';
 
 export default function PublicAdvisory({ liveData }) {
-    const [selectedBrgy, setSelectedBrgy] = useState('Brgy 7 (Poblacion)');
+    const [selectedIndex, setSelectedIndex] = useState(0);
 
-    const data = liveData || {
-        brgy7: { aqi: 112, heat: 39, status: 'Unsafe', time: '2 mins ago' },
-        tumalim: { aqi: 42, heat: 33, status: 'Clear', time: 'Just now' }
-    };
+    // Auto-polling for public live updates (Every 10 seconds)
+    useEffect(() => {
+        const dataPoller = setInterval(() => {
+            router.reload({
+                only: ['liveData'],
+                preserveState: true,
+                preserveScroll: true
+            });
+        }, 10000);
+        return () => clearInterval(dataPoller);
+    }, []);
 
-    const currentData = selectedBrgy === 'Brgy 7 (Poblacion)' ? data.brgy7 : data.tumalim;
+    // Dynamic data with fallback for testing
+    const displayData = liveData?.length > 0 ? liveData : [
+        { id: '1', name: 'Brgy 7 (Poblacion)', aqi: 112, heat: 39, status: 'Danger', time: '2 mins ago', isOffline: false },
+        { id: '2', name: 'Barangay Papaya', aqi: 42, heat: 33, status: 'Safe', time: 'Just now', isOffline: false }
+    ];
+
+    const currentData = displayData[selectedIndex] || displayData[0];
     const isDanger = currentData.aqi > 100 || currentData.heat > 38;
+    const isOffline = currentData.isOffline || currentData.status === 'Offline';
 
     return (
         <div className="min-h-screen bg-[#F7F7F5] font-sans text-stone-800 pb-32 md:pb-12">
@@ -34,8 +48,14 @@ export default function PublicAdvisory({ liveData }) {
                     <div className="flex items-center gap-4">
                         {/* Live Update Indicator */}
                         <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-white rounded-full border border-stone-200 shadow-sm">
-                            <div className={`w-2 h-2 rounded-full animate-pulse ${isDanger ? 'bg-rose-500' : 'bg-emerald-500'}`}></div>
-                            <span className="text-[10px] font-black uppercase text-stone-600 tracking-widest">Live Updates</span>
+                            {isOffline ? (
+                                <div className="w-2 h-2 rounded-full bg-stone-300"></div>
+                            ) : (
+                                <div className={`w-2 h-2 rounded-full animate-pulse ${isDanger ? 'bg-rose-500' : 'bg-emerald-500'}`}></div>
+                            )}
+                            <span className="text-[10px] font-black uppercase text-stone-600 tracking-widest">
+                                {isOffline ? 'System Offline' : 'Live Updates'}
+                            </span>
                         </div>
 
                         {/* Official Login Button */}
@@ -51,49 +71,60 @@ export default function PublicAdvisory({ liveData }) {
 
             <main className="max-w-7xl mx-auto px-6 pt-8 md:pt-16">
 
-                {/* 1. Grid Container for Desktop Layout */}
+                {/* Grid Container for Desktop Layout */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
-                    {/* Left Column: Hero & Selection (4 Cols on Desktop) */}
+                    {/* Left Column: Hero & Selection */}
                     <section className="lg:col-span-5 text-center lg:text-left">
                         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-stone-200/50 text-stone-500 text-[10px] font-bold uppercase tracking-widest mb-6">
                             <MapPin size={12} /> Nasugbu, Batangas
                         </div>
 
                         <h2 className="text-5xl md:text-7xl lg:text-8xl font-black text-stone-900 tracking-tighter leading-[0.85] mb-6 uppercase">
-                            {isDanger ? 'Stay\nCautious' : 'You Are\nSafe'}
+                            {isOffline ? 'Data\nPending' : (isDanger ? 'Stay\nCautious' : 'You Are\nSafe')}
                         </h2>
 
                         <p className="text-stone-500 font-medium text-base md:text-lg leading-relaxed mb-8 max-w-lg mx-auto lg:mx-0">
-                            {isDanger
-                                ? "We've detected levels that may be harmful to your health. Please review the safety advice."
-                                : "Environmental conditions are excellent in Nasugbu today. Enjoy your day!"}
+                            {isOffline
+                                ? "We are currently trying to establish a connection with the local sensors. Please check back shortly."
+                                : (isDanger
+                                    ? "We've detected levels that may be harmful to your health. Please review the safety advice."
+                                    : "Environmental conditions are excellent in your area today. Enjoy your day!")}
                         </p>
 
-                        <div className="flex flex-col sm:flex-row items-center lg:justify-start gap-3 mb-10">
-                            <BrgyPill name="Brgy 7 (Poblacion)" active={selectedBrgy === 'Brgy 7 (Poblacion)'} onClick={() => setSelectedBrgy('Brgy 7 (Poblacion)')} />
-                            <BrgyPill name="Barangay Tumalim" active={selectedBrgy === 'Barangay Tumalim'} onClick={() => setSelectedBrgy('Barangay Tumalim')} />
+                        {/* Dynamic Barangay Selection Buttons */}
+                        <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 mb-10">
+                            {displayData.map((node, index) => (
+                                <BrgyPill
+                                    key={node.id}
+                                    name={node.name}
+                                    active={selectedIndex === index}
+                                    onClick={() => setSelectedIndex(index)}
+                                />
+                            ))}
                         </div>
                     </section>
 
-                    {/* Right Column: Cards & Data (7 Cols on Desktop) */}
+                    {/* Right Column: Cards & Data */}
                     <div className="lg:col-span-7 space-y-6">
 
                         {/* Metrics Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <PublicReadingCard
                                 label="Air Pollution Index"
-                                value={currentData.aqi}
-                                unit="AQI" limit={100} icon={Wind}
-                                color={currentData.aqi > 100 ? 'rose' : 'emerald'}
-                                advice={currentData.aqi > 100 ? "Wear a mask" : "Safe air"}
+                                value={isOffline ? '--' : currentData.aqi}
+                                unit="AQI" limit={100} icon={isOffline ? WifiOff : Wind}
+                                color={isOffline ? 'stone' : (currentData.aqi > 100 ? 'rose' : 'emerald')}
+                                advice={isOffline ? "No Data" : (currentData.aqi > 100 ? "Wear a mask" : "Safe air")}
+                                isOffline={isOffline}
                             />
                             <PublicReadingCard
                                 label="Heat Index"
-                                value={`${currentData.heat}°C`}
-                                unit="Heat" limit={38} icon={ThermometerSun}
-                                color={currentData.heat > 38 ? 'amber' : 'emerald'}
-                                advice={currentData.heat > 38 ? "Avoid sun" : "Normal temp"}
+                                value={isOffline ? '--' : `${currentData.heat}°C`}
+                                unit="Heat" limit={38} icon={isOffline ? WifiOff : ThermometerSun}
+                                color={isOffline ? 'stone' : (currentData.heat > 38 ? 'amber' : 'emerald')}
+                                advice={isOffline ? "No Data" : (currentData.heat > 38 ? "Avoid sun" : "Normal temp")}
+                                isOffline={isOffline}
                             />
                         </div>
 
@@ -104,25 +135,27 @@ export default function PublicAdvisory({ liveData }) {
                                     <h3 className="text-xs font-black text-stone-400 uppercase tracking-widest flex items-center gap-2">
                                         <ShieldCheck size={16} /> Protective Actions
                                     </h3>
-                                    <InstructionItem text="Wear a face mask to filter dust and vog" active={currentData.aqi > 100} />
-                                    <InstructionItem text="Drink water every 30 minutes" active={currentData.heat > 35} />
-                                    <InstructionItem text="Keep pets and elders indoors" active={isDanger} />
+                                    <InstructionItem text="Wear a face mask to filter dust and vog" active={!isOffline && currentData.aqi > 100} />
+                                    <InstructionItem text="Drink water every 30 minutes" active={!isOffline && currentData.heat > 35} />
+                                    <InstructionItem text="Keep pets and elders indoors" active={!isOffline && isDanger} />
                                 </div>
                                 <div className="hidden md:block w-px h-32 bg-stone-100"></div>
                                 <div className="md:w-48 space-y-4">
-                                    <div className="flex items-center gap-3 text-emerald-600">
+                                    <div className={`flex items-center gap-3 ${isOffline ? 'text-stone-400' : 'text-emerald-600'}`}>
                                         <Zap size={18} fill="currentColor" />
                                         <span className="text-[10px] font-black uppercase tracking-widest leading-none">Grid Powered</span>
                                     </div>
-                                    <div className="flex items-center gap-3 text-blue-600">
-                                        <SignalHigh size={18} />
-                                        <span className="text-[10px] font-black uppercase tracking-widest leading-none">Cellular Link</span>
+                                    <div className={`flex items-center gap-3 ${isOffline ? 'text-stone-400' : 'text-blue-600'}`}>
+                                        {isOffline ? <WifiOff size={18} /> : <SignalHigh size={18} />}
+                                        <span className="text-[10px] font-black uppercase tracking-widest leading-none">
+                                            {isOffline ? 'No Link' : 'Cellular Link'}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Report & Contact (Grid on large screens) */}
+                        {/* Report & Contact */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <button className="py-6 rounded-[2rem] border-2 border-dashed border-stone-300 text-stone-400 font-bold text-sm flex items-center justify-center gap-2 hover:border-stone-400 hover:text-stone-600 transition-all">
                                 <AlertTriangle size={18} /> Report Hazard
@@ -173,26 +206,27 @@ function BrgyPill({ name, active, onClick }) {
     );
 }
 
-function PublicReadingCard({ label, value, unit, limit, icon: Icon, color, advice }) {
+function PublicReadingCard({ label, value, limit, icon: Icon, color, advice, isOffline }) {
     const colorStyles = {
         emerald: 'text-emerald-600',
         rose: 'text-rose-600',
-        amber: 'text-amber-600'
+        amber: 'text-amber-600',
+        stone: 'text-stone-400'
     };
 
-    const numericValue = parseInt(value);
-    const percentage = Math.min((numericValue / (limit * 1.5)) * 100, 100);
+    const numericValue = parseInt(value) || 0;
+    const percentage = isOffline ? 0 : Math.min((numericValue / (limit * 1.5)) * 100, 100);
 
     return (
         <div className="bg-white p-8 rounded-[2.5rem] border border-stone-200 shadow-sm flex flex-col h-full">
             <div className="flex justify-between items-start mb-6">
                 <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-2xl bg-stone-50 border border-stone-100 ${colorStyles[color]}`}>
+                    <div className={`p-3 rounded-2xl border ${isOffline ? 'bg-stone-50 border-stone-100 text-stone-400' : `bg-stone-50 border-stone-100 ${colorStyles[color]}`}`}>
                         <Icon size={20} />
                     </div>
                     <div>
                         <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">{label}</p>
-                        <h3 className="text-4xl font-black text-stone-900 leading-none">{value}</h3>
+                        <h3 className={`text-4xl font-black leading-none ${isOffline ? 'text-stone-300' : 'text-stone-900'}`}>{value}</h3>
                     </div>
                 </div>
             </div>
@@ -202,7 +236,7 @@ function PublicReadingCard({ label, value, unit, limit, icon: Icon, color, advic
                 </div>
                 <div className="w-full h-2 bg-stone-100 rounded-full overflow-hidden">
                     <div
-                        className={`h-full rounded-full transition-all duration-1000 ${color === 'rose' ? 'bg-rose-500' : color === 'amber' ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                        className={`h-full rounded-full transition-all duration-1000 ${color === 'rose' ? 'bg-rose-500' : color === 'amber' ? 'bg-amber-500' : (isOffline ? 'bg-transparent' : 'bg-emerald-500')}`}
                         style={{ width: `${percentage}%` }}
                     ></div>
                 </div>

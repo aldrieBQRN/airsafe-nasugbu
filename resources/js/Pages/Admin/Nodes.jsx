@@ -69,7 +69,7 @@ export default function Nodes({ nodesData, barangays }) {
                 preserveScroll: true,
                 onFinish: () => { isRefreshing = false; }
             });
-        }, 1000); // Sync every 1 second
+        }, 30000); // Sync every 1 second
 
         return () => clearInterval(dataPoller);
     }, []);

@@ -212,7 +212,9 @@ class OfficialController extends Controller
 
         for ($i = $daysToLoop; $i >= 0; $i--) {
             $date = Carbon::now()->subDays($i);
-            $dayLabel = $range === '30' ? $date->format('M d') : $date->format('D');
+
+            // CHANGED: Universally format as Month and Day (e.g., "May 4") for both 7 and 30 day views
+            $dayLabel = $date->format('M j');
 
             $aqiEntry = ['day' => $dayLabel];
             $heatEntry = ['day' => $dayLabel];

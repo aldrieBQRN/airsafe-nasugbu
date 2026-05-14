@@ -53,7 +53,7 @@ export default function BarangayLogs({ logs, filters, brgyName }) {
                 preserveScroll: true,
                 onFinish: () => { isRefreshing = false; }
             });
-        }, 1000); // 1-second interval
+        }, 30000); // 1-second interval
 
         return () => clearInterval(dataPoller);
     }, []);

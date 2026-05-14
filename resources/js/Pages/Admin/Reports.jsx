@@ -16,7 +16,7 @@ export default function Reports({ historicalAqi, historicalHeat, deviceNames, kp
 
     const chartColors = ['#e11d48', '#059669', '#f59e0b', '#3b82f6', '#8b5cf6'];
 
-    // UPGRADED: 1-Second Background Database Sync
+    // UPGRADED: 30-Second Background Database Sync
     useEffect(() => {
         let isRefreshing = false;
         const dataPoller = setInterval(() => {
@@ -29,11 +29,10 @@ export default function Reports({ historicalAqi, historicalHeat, deviceNames, kp
                 preserveScroll: true,
                 onFinish: () => { isRefreshing = false; }
             });
-        }, 1000); // Live sync every 1 second
+        }, 30000); // Live sync every 30 seconds
 
         return () => clearInterval(dataPoller);
     }, [dateRange, selectedArea]);
-
 
     const handleFilterChange = (type, value) => {
         let newRange = dateRange;
@@ -58,7 +57,7 @@ export default function Reports({ historicalAqi, historicalHeat, deviceNames, kp
         <AdminLayout>
             <Head title="Analytics & Reports" />
 
-            {/* Header Section - REVERTED TO ORIGINAL TEXT */}
+            {/* Header Section */}
             <div className="mb-6 md:mb-10 flex flex-col xl:flex-row xl:items-end justify-between gap-6 print:hidden">
                 <div className="px-1">
                     <h1 className="text-3xl md:text-4xl font-black text-stone-900 tracking-tight leading-none uppercase">Analytics & Reports</h1>
@@ -95,8 +94,6 @@ export default function Reports({ historicalAqi, historicalHeat, deviceNames, kp
                             </select>
                         </div>
                     </div>
-
-
                 </div>
             </div>
 
@@ -104,11 +101,13 @@ export default function Reports({ historicalAqi, historicalHeat, deviceNames, kp
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5 mb-6 md:mb-8">
                 <SummaryCard title="Peak Air Pollution" value={Math.round(kpis?.peakAqi || 0)} unit="AQI" desc={`Last ${dateRange} days`} icon={Wind} color="rose" />
                 <SummaryCard title="Peak Heat Index" value={`${Number(kpis?.peakHeat || 0).toFixed(1)}°`} unit="C" desc={`Last ${dateRange} days`} icon={ThermometerSun} color="amber" />
-                <SummaryCard title="Alerts Dispatched" value={kpis?.alertsSent || 0} unit="SMS" desc="Danger threshold breaches" icon={AlertTriangle} color="stone" />
+                {/* FIXED: Removed SMS and changed unit to "Alerts" */}
+                <SummaryCard title="Alerts Dispatched" value={kpis?.alertsSent || 0} unit="Alerts" desc="Danger threshold breaches" icon={AlertTriangle} color="stone" />
                 <SummaryCard title="System Uptime" value="99.9%" unit="Rel." desc="Sensor Grid Active" icon={Activity} color="emerald" />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-8">
+            <div className="grid grid-cols-1 gap-6 md:gap-8 pb-8">
+
                 {/* Air Quality Distribution */}
                 <div className="bg-white rounded-3xl md:rounded-[2.5rem] border border-stone-200 p-5 md:p-8 hover:border-stone-300 transition-all shadow-sm">
                     <div className="mb-6 md:mb-8">
@@ -136,8 +135,17 @@ export default function Reports({ historicalAqi, historicalHeat, deviceNames, kp
                                     label={{ position: 'insideTopLeft', value: 'DANGER THRESHOLD', fill: '#e11d48', fontSize: 9, fontWeight: 900 }}
                                 />
 
+                                {/* FIXED: Removed fixed barSize={12} and added maxBarSize={60} so bars are thick and responsive */}
                                 {deviceNames?.map((name, index) => (
-                                    <Bar key={name} dataKey={name} name={name} fill={chartColors[index % chartColors.length]} radius={[4, 4, 0, 0]} barSize={12} isAnimationActive={false} />
+                                    <Bar
+                                        key={name}
+                                        dataKey={name}
+                                        name={name}
+                                        fill={chartColors[index % chartColors.length]}
+                                        radius={[6, 6, 0, 0]}
+                                        maxBarSize={60}
+                                        isAnimationActive={false}
+                                    />
                                 ))}
                             </BarChart>
                         </ResponsiveContainer>

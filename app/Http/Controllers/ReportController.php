@@ -31,7 +31,9 @@ class ReportController extends Controller
 
         for ($i = $daysToLoop; $i >= 0; $i--) {
             $date = Carbon::now()->subDays($i);
-            $dayLabel = $range === '30' ? $date->format('M d') : $date->format('D');
+
+            // CHANGED: Universally format as Month and Day (e.g., "May 4")
+            $dayLabel = $date->format('M j');
 
             $aqiEntry = ['day' => $dayLabel];
             $heatEntry = ['day' => $dayLabel];

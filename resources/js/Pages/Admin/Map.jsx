@@ -84,7 +84,7 @@ export default function LiveMap({ nodesData }) {
                 preserveScroll: true,
                 onFinish: () => { isRefreshing = false; }
             });
-        }, 1000);
+        }, 30000);
         return () => clearInterval(dataPoller);
     }, []);
 

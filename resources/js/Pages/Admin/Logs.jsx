@@ -52,7 +52,7 @@ export default function Logs({ logs, filters }) {
                 preserveScroll: true,
                 onFinish: () => { isRefreshing = false; }
             });
-        }, 1000); // High-frequency 1-second sync
+        }, 30000); // High-frequency 1-second sync
 
         return () => clearInterval(dataPoller);
     }, []);

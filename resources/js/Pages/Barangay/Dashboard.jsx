@@ -45,7 +45,7 @@ export default function BarangayDashboard({ brgyName, localData, chartData, rece
                 preserveScroll: true,
                 onFinish: () => { isRefreshing = false; }
             });
-        }, 1000);
+        }, 30000);
         return () => { clearInterval(timer); clearInterval(dataPoller); };
     }, [timeOffset]);
 
@@ -168,7 +168,19 @@ export default function BarangayDashboard({ brgyName, localData, chartData, rece
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f4" />
                                     <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#a8a29e', fontSize: 10, fontWeight: 'bold' }} dy={10} />
                                     <YAxis axisLine={false} tickLine={false} tick={{ fill: '#a8a29e', fontSize: 10, fontWeight: 'bold' }} width={40} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e7e5e4' }} itemStyle={{ fontWeight: 'bold', fontSize: '11px' }} labelStyle={{ color: '#78716c', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }} />
+
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e7e5e4' }}
+                                        itemStyle={{ fontWeight: 'bold', fontSize: '11px' }}
+                                        labelStyle={{ color: '#78716c', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}
+                                        formatter={(value, name) => {
+                                            if (name.includes('Heat Index')) {
+                                                return [`${Number(value).toFixed(1)}°C`, name];
+                                            }
+                                            return [`${Math.round(value)} AQI`, name];
+                                        }}
+                                    />
+
                                     <Legend iconType="circle" wrapperStyle={{ paddingTop: '10px', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
 
                                     <ReferenceLine y={100} stroke="#e11d48" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'AQI DANGER', fill: '#e11d48', fontSize: 9, fontWeight: 800 }} />
@@ -191,7 +203,6 @@ export default function BarangayDashboard({ brgyName, localData, chartData, rece
                         <SpecSheetCard name={deviceData.name} data={deviceData} />
                     </div>
 
-                    {/* FIXED: Replaced max-h with flex-1 and flex-col structure to auto-fill height */}
                     <div className="bg-white rounded-3xl md:rounded-[2rem] shadow-sm border border-stone-200/60 p-5 md:p-6 flex-1 flex flex-col min-h-[300px]">
                         <div className="flex items-center justify-between mb-5 md:mb-6 pb-4 border-b border-stone-100 shrink-0">
                             <div className="flex items-center gap-3">

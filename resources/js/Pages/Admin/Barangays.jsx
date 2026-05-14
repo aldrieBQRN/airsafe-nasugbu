@@ -62,7 +62,7 @@ export default function Barangays({ barangays: initialBarangays }) {
                 preserveScroll: true,
                 onFinish: () => { isRefreshing = false; }
             });
-        }, 1000);
+        }, 30000);
 
         return () => clearInterval(dataPoller);
     }, [isModalOpen]);

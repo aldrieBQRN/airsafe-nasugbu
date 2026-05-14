@@ -41,8 +41,8 @@ Route::get('/', function () {
     $liveSensorData = $devices->map(function ($device) {
         $latest = $device->latestReading;
 
-        // 5-minute timeout for public view
-        $isOffline = !$device->last_seen || Carbon::parse($device->last_seen)->diffInMinutes(now()) > 5;
+        // 3-minute timeout for public view
+        $isOffline = !$device->last_seen || Carbon::parse($device->last_seen)->diffInMinutes(now()) > 3;
         $name = $device->barangay ? $device->barangay->name : ($device->location ?? 'Unknown Area');
 
         return [
@@ -56,8 +56,40 @@ Route::get('/', function () {
         ];
     });
 
+    // NEW: Fetch 7-Day Historical Data (Optimized Single Query - Peak Values)
+    $sevenDaysAgo = Carbon::today()->subDays(6);
+    $readings = SensorReading::where('created_at', '>=', $sevenDaysAgo)
+        ->selectRaw('DATE(created_at) as date, MAX(aqi) as max_aqi, MAX(heat_index) as max_heat')
+        ->groupBy('date')
+        ->orderBy('date', 'asc')
+        ->get()
+        ->keyBy('date');
+
+    $historicalData = collect();
+
+    // Build an array for the last 7 days, filling missing days with zeros
+    for ($i = 6; $i >= 0; $i--) {
+        $dateStr = Carbon::today()->subDays($i)->format('Y-m-d');
+        $dayName = Carbon::today()->subDays($i)->format('M j'); // e.g., "May 1", "May 2"
+
+        if ($readings->has($dateStr)) {
+            $historicalData->push([
+                'day' => $dayName,
+                'aqi' => round($readings[$dateStr]->max_aqi),
+                'heat' => round($readings[$dateStr]->max_heat, 1),
+            ]);
+        } else {
+            $historicalData->push([
+                'day' => $dayName,
+                'aqi' => 0,
+                'heat' => 0,
+            ]);
+        }
+    }
+
     return Inertia::render('Public/Advisory', [
-        'liveData' => $liveSensorData
+        'liveData' => $liveSensorData,
+        'historicalData' => $historicalData // Passed to React
     ]);
 })->name('home');
 
@@ -74,8 +106,9 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
         // OPTIMIZED: Fetch all devices with their latest reading in ONE query
         $devices = Device::with('latestReading')->get()->map(function ($device) {
             $latest = $device->latestReading;
-            // 15-second heartbeat check
-            $isOffline = !$device->last_seen || Carbon::parse($device->last_seen)->diffInSeconds(now()) > 15;
+
+            // 3-minute heartbeat check
+            $isOffline = !$device->last_seen || Carbon::parse($device->last_seen)->diffInMinutes(now()) > 3;
 
             return [
                 'id' => $device->id,
@@ -92,6 +125,17 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
             ];
         });
 
+        // NEW: Get True 24-Hour Peaks directly from the database
+        $peakAqiReading = SensorReading::with('device')
+            ->where('created_at', '>=', now()->subHours(24))
+            ->orderBy('aqi', 'desc')
+            ->first();
+
+        $peakHeatReading = SensorReading::with('device')
+            ->where('created_at', '>=', now()->subHours(24))
+            ->orderBy('heat_index', 'desc')
+            ->first();
+
         // Fetch last 24 hours for the chart in 12-hour format
         $chartData = SensorReading::where('created_at', '>=', now()->subHours(24))
             ->orderBy('created_at', 'asc')
@@ -104,18 +148,26 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
                 ];
             });
 
-        // Fetch recent activities for the feed
+        // FIXED: Only fetch actual ALERTS, totally ignoring routine syncs
         $recentLogs = SensorReading::with('device')
+            ->where(function ($query) {
+                $query->where('aqi', '>', 100)
+                    ->orWhere('heat_index', '>', 38);
+            })
             ->latest()
-            ->take(10)
+            ->take(10) // Show up to 10 recent alerts
             ->get()
             ->map(function ($reading) {
-                $isAlert = $reading->aqi > 100 || $reading->heat_index > 38;
+                // Figure out exactly what caused the alert
+                $causes = [];
+                if ($reading->aqi > 100) $causes[] = 'AQI (' . round($reading->aqi) . ')';
+                if ($reading->heat_index > 38) $causes[] = 'Heat (' . round($reading->heat_index, 1) . '°C)';
+
                 return [
                     'time' => $reading->created_at->diffForHumans(),
                     'sensor' => $reading->device->name ?? 'System',
-                    'message' => $isAlert ? "Critical Alert: Hazard threshold breached!" : "Routine data sync successful.",
-                    'isAlert' => $isAlert
+                    'message' => "Hazard threshold breached! " . implode(' & ', $causes) . " detected.",
+                    'isAlert' => true
                 ];
             });
 
@@ -123,6 +175,12 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
             'nodesData' => $devices,
             'chartData' => $chartData,
             'recentLogs' => $recentLogs,
+            'kpis' => [
+                'peakAqi' => $peakAqiReading ? round($peakAqiReading->aqi) : 0,
+                'peakAqiDevice' => $peakAqiReading->device->name ?? 'System',
+                'peakHeat' => $peakHeatReading ? round($peakHeatReading->heat_index, 1) : 0,
+                'peakHeatDevice' => $peakHeatReading->device->name ?? 'System',
+            ]
         ]);
     })->name('admin.dashboard');
 
@@ -131,7 +189,9 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
         // OPTIMIZED: Added latestReading to the eager loading
         $devices = Device::with(['barangay', 'latestReading'])->get()->map(function ($device) {
             $latest = $device->latestReading;
-            $isOffline = !$device->last_seen || Carbon::parse($device->last_seen)->diffInSeconds(now()) > 15;
+
+            // 3-minute heartbeat check
+            $isOffline = !$device->last_seen || Carbon::parse($device->last_seen)->diffInMinutes(now()) > 3;
 
             return [
                 'id' => $device->id,
@@ -190,8 +250,8 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
         $devices = Device::with('latestReading')->get()->map(function ($device) {
             $latest = $device->latestReading;
 
-            // 15-second heartbeat check
-            $isOffline = !$device->last_seen || Carbon::parse($device->last_seen)->diffInSeconds(now()) > 15;
+            // 3-minute heartbeat check
+            $isOffline = !$device->last_seen || Carbon::parse($device->last_seen)->diffInMinutes(now()) > 3;
 
             return [
                 'id' => $device->id,

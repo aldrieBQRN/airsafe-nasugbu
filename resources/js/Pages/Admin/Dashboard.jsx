@@ -34,7 +34,7 @@ function MapAutoCenter({ center }) {
     return null;
 }
 
-export default function Dashboard({ nodesData, chartData, recentLogs }) {
+export default function Dashboard({ nodesData, chartData, recentLogs, kpis }) {
     const { serverTime } = usePage().props;
 
     // PERSISTENCE: Prevents "Gone then Show" flickering by keeping the last valid data in memory
@@ -52,23 +52,13 @@ export default function Dashboard({ nodesData, chartData, recentLogs }) {
         return trueServerTime - clientTime;
     });
 
-    // FIXED: MUNICIPALITY-WIDE PEAK LOGIC (Includes Offline Nodes for Last Known Data)
-    const validNodes = devices.filter(d => d.sensors);
+    // TRUE 24-HOUR PEAK LOGIC (Fetched directly from Laravel Database)
+    const peakAqi = kpis?.peakAqi || 0;
+    const peakHeat = Number(kpis?.peakHeat || 0).toFixed(1);
 
-    const peakAqiDevice = validNodes.length > 0
-        ? validNodes.reduce((prev, curr) => ((prev.sensors?.aqi || 0) > (curr.sensors?.aqi || 0) ? prev : curr))
-        : { name: 'No Data', sensors: { aqi: 0 }, status: 'offline' };
-
-    const peakHeatDevice = validNodes.length > 0
-        ? validNodes.reduce((prev, curr) => ((prev.sensors?.heat_index || 0) > (curr.sensors?.heat_index || 0) ? prev : curr))
-        : { name: 'No Data', sensors: { heat_index: 0 }, status: 'offline' };
-
-    const peakAqi = Math.round(peakAqiDevice.sensors?.aqi || 0);
-    const peakHeat = Number(peakHeatDevice.sensors?.heat_index || 0).toFixed(1);
-
-    // Tags the trend text with "(Last Known)" if the peak value belongs to an offline device
-    const aqiTrend = validNodes.length === 0 ? "No Data" : (peakAqiDevice.status === 'offline' ? `${peakAqiDevice.name} (Last Known)` : peakAqiDevice.name);
-    const heatTrend = validNodes.length === 0 ? "No Data" : (peakHeatDevice.status === 'offline' ? `${peakHeatDevice.name} (Last Known)` : peakHeatDevice.name);
+    // Displays the name of the device that recorded the peak today
+    const aqiTrend = kpis?.peakAqiDevice || "No Data";
+    const heatTrend = kpis?.peakHeatDevice || "No Data";
 
     const [currentTime, setCurrentTime] = useState(new Date(new Date().getTime() + timeOffset));
     const [mapFocus, setMapFocus] = useState(null);
@@ -83,18 +73,18 @@ export default function Dashboard({ nodesData, chartData, recentLogs }) {
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date(new Date().getTime() + timeOffset)), 1000);
 
-        // 1-Second Sync with overlapping protection
+        // 30-Second Sync with overlapping protection
         let isRefreshing = false;
         const dataPoller = setInterval(() => {
             if (isRefreshing) return;
             isRefreshing = true;
             router.reload({
-                only: ['nodesData', 'chartData', 'recentLogs'],
+                only: ['nodesData', 'chartData', 'recentLogs', 'kpis'],
                 preserveState: true,
                 preserveScroll: true,
                 onFinish: () => { isRefreshing = false; }
             });
-        }, 1000);
+        }, 30000);
 
         return () => { clearInterval(timer); clearInterval(dataPoller); };
     }, [timeOffset]);
@@ -124,12 +114,17 @@ export default function Dashboard({ nodesData, chartData, recentLogs }) {
 
                 <div className="flex items-center justify-between md:justify-end gap-5 bg-white md:bg-transparent p-4 md:p-0 rounded-2xl border md:border-none border-stone-200 w-full md:w-auto">
                     <div className="text-left md:text-right">
-                        <div className="text-base md:text-xl font-bold text-stone-800 tabular-nums leading-none mb-1">{currentTime.toLocaleDateString()}</div>
+                        {/* FIXED: Formatted Date to e.g., "Tue, May 5, 2026" */}
+                        <div className="text-base md:text-xl font-bold text-stone-800 tabular-nums leading-none mb-1">
+                            {currentTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                        </div>
                         <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest">System Date</span>
                     </div>
                     <div className="h-8 w-px bg-stone-200"></div>
                     <div className="text-right">
-                        <div className="text-base md:text-xl font-bold text-stone-800 tabular-nums leading-none mb-1">{currentTime.toLocaleTimeString()}</div>
+                        <div className="text-base md:text-xl font-bold text-stone-800 tabular-nums leading-none mb-1">
+                            {currentTime.toLocaleTimeString('en-US', { hour12: true })}
+                        </div>
                         <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest">Real-Time</span>
                     </div>
                 </div>
@@ -205,7 +200,7 @@ export default function Dashboard({ nodesData, chartData, recentLogs }) {
                                 <LogEntry key={i} time={log.time} location={log.sensor} message={log.message} isAlert={log.isAlert} />
                             )) : (
                                 <>
-                                    <LogEntry time="Live" location="System" message="Real-time telemetry link operational." />
+                                    <LogEntry time="Live" location="System" message="Real-time telemetry link operational. No hazards detected." />
                                     {devices.filter(d => d.status === 'offline').map(d => (
                                         <LogEntry key={d.id} time="Warning" location={d.name} message="Gateway connection lost." isAlert />
                                     ))}
@@ -247,7 +242,17 @@ function CeramicAnalyticsChart({ chartData, devices, height }) {
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f4" />
                         <XAxis dataKey="time" tick={{ fill: '#a8a29e', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fill: '#a8a29e', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} width={35} />
-                        <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e7e5e4', fontSize: '10px' }} />
+
+                        <Tooltip
+                            contentStyle={{ borderRadius: '12px', border: '1px solid #e7e5e4', fontSize: '10px' }}
+                            formatter={(value, name) => {
+                                if (name.includes('Heat Index')) {
+                                    return [`${Number(value).toFixed(1)}°C`, name];
+                                }
+                                return [`${Math.round(value)} AQI`, name];
+                            }}
+                        />
+
                         <ReferenceLine y={100} stroke="#e11d48" strokeDasharray="3 3" label={{ position: 'top', value: 'AQI LIMIT', fill: '#e11d48', fontSize: 8 }} />
                         <ReferenceLine y={38} stroke="#f59e0b" strokeDasharray="3 3" label={{ position: 'bottom', value: 'HEAT LIMIT', fill: '#f59e0b', fontSize: 8 }} />
                         {devices.map((device, idx) => [
@@ -289,7 +294,6 @@ function SpecSheetCard({ name, data, isOffline, signal }) {
             <div className="grid grid-cols-2 gap-px bg-stone-200 rounded-xl overflow-hidden border border-stone-200 mb-3">
                 <div className="bg-white p-2 text-center">
                     <span className="text-[7px] font-bold text-stone-400 uppercase block">AQI</span>
-                    {/* FIXED: Displays value directly, relying on grayscale to indicate offline status */}
                     <strong className={`text-lg font-black ${isOffline ? 'text-stone-400' : 'text-stone-800'}`}>{Math.round(data?.aqi || 0)}</strong>
                 </div>
                 <div className="bg-white p-2 text-center">

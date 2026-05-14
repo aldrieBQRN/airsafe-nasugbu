@@ -45,8 +45,6 @@ export default function BarangayReports({ brgyName, historicalAqi, historicalHea
                         </select>
                         <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
                     </div>
-
-
                 </div>
             </div>
 
@@ -54,12 +52,14 @@ export default function BarangayReports({ brgyName, historicalAqi, historicalHea
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
                 <SummaryCard title="Peak Air Pollution" value={Math.round(kpis?.peakAqi || 0)} unit="AQI" desc={`Recorded in last ${dateRange} days`} icon={Wind} color="rose" />
                 <SummaryCard title="Peak Heat Index" value={`${Number(kpis?.peakHeat || 0).toFixed(1)}°C`} unit="Max" desc={`Recorded in last ${dateRange} days`} icon={ThermometerSun} color="amber" />
-                <SummaryCard title="Total Local Alerts" value={kpis?.alertsSent || 0} unit="SMS" desc="Sent to Brgy Officials" icon={AlertTriangle} color="stone" />
+                {/* FIXED: Changed unit to Alerts */}
+                <SummaryCard title="Total Local Alerts" value={kpis?.alertsSent || 0} unit="Alerts" desc="Danger threshold breaches" icon={AlertTriangle} color="stone" />
                 <SummaryCard title="Node Reliability" value="99.9%" unit="Uptime" desc="Active Connection" icon={Activity} color="emerald" />
             </div>
 
             {/* Dual Charts Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div className="grid grid-cols-1 gap-6 md:gap-8 pb-8">
+
                 {/* Air Quality Bar Chart */}
                 <div className="bg-white rounded-[1.5rem] sm:rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-stone-200/60 p-5 sm:p-8 flex flex-col">
                     <div className="flex justify-between items-start mb-8">
@@ -68,18 +68,25 @@ export default function BarangayReports({ brgyName, historicalAqi, historicalHea
                             <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-1">MQ135 & MQ136 Sensors</p>
                         </div>
                     </div>
-                    <div className="h-[250px] sm:h-[300px] w-full mt-auto">
+                    <div className="h-[300px] md:h-[380px] w-full mt-auto">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={historicalAqi} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f4" />
                                 <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#a8a29e', fontSize: 12, fontWeight: 'bold' }} dy={10} />
                                 <YAxis axisLine={false} tickLine={false} tick={{ fill: '#a8a29e', fontSize: 12, fontWeight: 'bold' }} />
-                                <RechartsTooltip contentStyle={{ borderRadius: '16px', fontWeight: 'bold' }} />
+
+                                {/* FIXED: Added formatter to clean up hover values */}
+                                <RechartsTooltip
+                                    contentStyle={{ borderRadius: '16px', fontWeight: 'bold' }}
+                                    formatter={(value, name) => [`${Math.round(value)} AQI`, name]}
+                                />
+
                                 <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontWeight: 'bold' }} iconType="circle" />
                                 <ReferenceLine y={100} stroke="#e11d48" strokeDasharray="3 3" ifOverflow="extendDomain" label={{ position: 'insideTopLeft', value: 'Danger Limit', fill: '#e11d48', fontSize: 10, fontWeight: 800 }} />
 
+                                {/* FIXED: Updated maxBarSize to 60 for thicker bars */}
                                 {deviceNames?.map((name, index) => (
-                                    <Bar key={name} dataKey={name} name={name} fill={chartColors[index % chartColors.length]} radius={[6, 6, 0, 0]} maxBarSize={40} />
+                                    <Bar key={name} dataKey={name} name={name} fill={chartColors[index % chartColors.length]} radius={[6, 6, 0, 0]} maxBarSize={60} isAnimationActive={false} />
                                 ))}
                             </BarChart>
                         </ResponsiveContainer>
@@ -94,18 +101,24 @@ export default function BarangayReports({ brgyName, historicalAqi, historicalHea
                             <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-1">DHT22 Sensors</p>
                         </div>
                     </div>
-                    <div className="h-[250px] sm:h-[300px] w-full mt-auto">
+                    <div className="h-[300px] md:h-[380px] w-full mt-auto">
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={historicalHeat} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f4" />
                                 <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#a8a29e', fontSize: 12, fontWeight: 'bold' }} dy={10} />
                                 <YAxis axisLine={false} tickLine={false} domain={[25, 45]} tick={{ fill: '#a8a29e', fontSize: 12, fontWeight: 'bold' }} />
-                                <RechartsTooltip contentStyle={{ borderRadius: '16px', fontWeight: 'bold' }} />
+
+                                {/* FIXED: Added formatter to lock Heat Index decimals to exactly 1 */}
+                                <RechartsTooltip
+                                    contentStyle={{ borderRadius: '16px', fontWeight: 'bold' }}
+                                    formatter={(value, name) => [`${Number(value).toFixed(1)}°C`, name]}
+                                />
+
                                 <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontWeight: 'bold' }} iconType="circle" />
                                 <ReferenceLine y={38} stroke="#f59e0b" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Heat Advisory', fill: '#f59e0b', fontSize: 10, fontWeight: 800 }} />
 
                                 {deviceNames?.map((name, index) => (
-                                    <Line key={name} type="monotone" dataKey={name} name={name} stroke={chartColors[index % chartColors.length]} strokeWidth={4} dot={{ r: 5, strokeWidth: 2, fill: '#ffffff' }} activeDot={{ r: 7 }} />
+                                    <Line key={name} type="monotone" dataKey={name} name={name} stroke={chartColors[index % chartColors.length]} strokeWidth={4} dot={{ r: 5, strokeWidth: 2, fill: '#ffffff' }} activeDot={{ r: 7 }} isAnimationActive={false} />
                                 ))}
                             </LineChart>
                         </ResponsiveContainer>

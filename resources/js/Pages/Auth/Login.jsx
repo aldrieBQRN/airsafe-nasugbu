@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Head, useForm, Link } from '@inertiajs/react';
 import {
     Wind, Lock, Mail, ArrowRight,
-    ChevronLeft, AlertCircle
+    ChevronLeft, AlertCircle, Eye, EyeOff
 } from 'lucide-react';
 
 export default function Login() {
@@ -13,6 +13,7 @@ export default function Login() {
     });
 
     const [isVisible, setIsVisible] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     useEffect(() => {
         setIsVisible(true);
@@ -94,7 +95,7 @@ export default function Login() {
                                     value={data.email}
                                     onChange={e => setData('email', e.target.value)}
                                     className="w-full h-14 lg:h-16 bg-stone-50 lg:bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold focus:ring-4 focus:ring-stone-100 focus:border-stone-900 transition-all outline-none"
-                                    placeholder="admin@airsafe.ph"
+                                    placeholder="e.g. user@airsafe.ph"
                                 />
                             </div>
                         </div>
@@ -104,14 +105,22 @@ export default function Login() {
                             <div className="relative">
                                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300 group-focus-within:text-stone-900 transition-colors" size={18} />
                                 <input
-                                    type="password"
+                                    type={showPassword ? "text" : "password"}
                                     required
                                     autoComplete="current-password"
                                     value={data.password}
                                     onChange={e => setData('password', e.target.value)}
-                                    className="w-full h-14 lg:h-16 bg-stone-50 lg:bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold focus:ring-4 focus:ring-stone-100 focus:border-stone-900 transition-all outline-none"
+                                    // Added [&::-ms-reveal]:hidden to hide the default Edge eye icon and pr-12 to make room for our custom icon
+                                    className="w-full h-14 lg:h-16 bg-stone-50 lg:bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-12 text-sm font-bold focus:ring-4 focus:ring-stone-100 focus:border-stone-900 transition-all outline-none [&::-ms-reveal]:hidden [&::-ms-clear]:hidden"
                                     placeholder="••••••••"
                                 />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-300 hover:text-stone-600 focus:outline-none transition-colors"
+                                >
+                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
                             </div>
                         </div>
 

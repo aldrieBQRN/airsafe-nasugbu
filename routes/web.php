@@ -21,6 +21,69 @@ use Inertia\Inertia;
 |--------------------------------------------------------------------------
 */
 
+// Web-based Artisan Migration, Seeding & Maintenance Endpoint for InfinityFree
+Route::get('/artisan-migrate', function (\Illuminate\Http\Request $request) {
+    $expectedToken = env('MIGRATION_TOKEN') ?: env('APP_KEY');
+    $providedToken = $request->query('token');
+
+    if (empty($providedToken) || empty($expectedToken) || $providedToken !== $expectedToken) {
+        return response("❌ Unauthorized: Invalid or missing ?token parameter.", 403)
+            ->header('Content-Type', 'text/plain');
+    }
+
+    $output = [];
+    $output[] = "==================================================";
+    $output[] = "🚀 AIRSAFE NASUGBU - ARTISAN MAINTENANCE RUNNER";
+    $output[] = "Time: " . now()->toDateTimeString();
+    $output[] = "==================================================\n";
+
+    try {
+        if ($request->has('fresh')) {
+            $params = ['--force' => true];
+            if ($request->has('seed')) {
+                $params['--seed'] = true;
+            }
+            if ($request->has('class')) {
+                $params['--seeder'] = $request->query('class');
+            }
+            Artisan::call('migrate:fresh', $params);
+            $output[] = "⚡ [migrate:fresh] Output:\n" . Artisan::output();
+        } else {
+            Artisan::call('migrate', ['--force' => true]);
+            $output[] = "⚡ [migrate] Output:\n" . Artisan::output();
+
+            if ($request->has('seed')) {
+                $seedParams = ['--force' => true];
+                if ($request->has('class')) {
+                    $seedParams['--class'] = $request->query('class');
+                }
+                Artisan::call('db:seed', $seedParams);
+                $output[] = "🌱 [db:seed] Output:\n" . Artisan::output();
+            }
+        }
+
+        if ($request->has('storage')) {
+            Artisan::call('storage:link');
+            $output[] = "🔗 [storage:link] Output:\n" . Artisan::output();
+        }
+
+        // Automatic demo telemetry sync
+        \App\Services\DemoTelemetryService::ensureFreshData();
+        $output[] = "📡 [telemetry] Synchronized 30-day demo sensor records.\n";
+
+        // Optimize and clear caches
+        Artisan::call('optimize:clear');
+        $output[] = "🧹 [optimize:clear] Output:\n" . Artisan::output();
+
+        $output[] = "\n✅ All operations completed successfully!";
+    } catch (\Throwable $e) {
+        $output[] = "\n❌ ERROR ENCOUNTERED:\n" . $e->getMessage() . "\n" . $e->getTraceAsString();
+    }
+
+    return response("<pre style='background:#111827;color:#10b981;padding:20px;font-family:monospace;font-size:14px;border-radius:8px;line-height:1.5;overflow:auto;'>" . implode("\n", $output) . "</pre>")
+        ->header('Content-Type', 'text/html');
+});
+
 // Add this temporarily to refresh your settings online
 Route::get('/clear-cache', function () {
     Artisan::call('config:cache');

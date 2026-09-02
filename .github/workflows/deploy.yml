@@ -1,4 +1,4 @@
-name: Deploy to InfinityFree
+name: Deploy to InfinityFree (Secure Split Architecture)
 
 on:
   push:
@@ -7,47 +7,57 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
-    name: Build Assets and Deploy via FTPS
+  web-deploy:
+    name: Build & Securely Deploy to InfinityFree FTP
     runs-on: ubuntu-latest
 
     steps:
-      - name: ⬇️ Checkout Repository
+      - name: 1. Checkout Code
         uses: actions/checkout@v4
 
-      - name: 🐘 Setup PHP
+      - name: 2. Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql, bcmath, curl, zip
           coverage: none
 
-      - name: 📦 Setup Node.js
+      - name: 3. Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: 🛠️ Install Composer Dependencies
-        run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+      - name: 4. Install Composer Dependencies
+        run: composer install --no-dev --optimize-autoloader --no-progress --prefer-dist
 
-      - name: 🎨 Install NPM Dependencies & Build Frontend
+      - name: 5. Install NPM Dependencies & Build Vite Assets
         run: |
           npm ci
           npm run build
 
-      - name: 🧹 Clean up Unnecessary Files for Shared Hosting
-        run: |
-          rm -rf node_modules
-          rm -rf tests
-          rm -rf .git
-          rm -rf .github
-
-      - name: 🚀 Deploy to InfinityFree via FTP
+      - name: 6. Deploy Private Core Files to htdocs/airsafe-core/
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: /htdocs/
-          dangerous-clean-slate: false
+          server-dir: htdocs/airsafe-core/
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            **/vendor/**
+            **/public/**
+            **/tests/**
+            **/*.md
+            .env
+            env.php
+
+      - name: 7. Deploy Public Assets Only to /htdocs/ (Public Web Root)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: public/
+          server-dir: htdocs/

@@ -83,6 +83,58 @@ export default function Login() {
                         </div>
                     )}
 
+                    {/* --- 1-CLICK DEMO LOGIN SELECTOR (PORTFOLIO SHOWCASE) --- */}
+                    <div className="mb-6 p-4 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl">
+                        <div className="flex items-center justify-between mb-3">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                Portfolio Demo Access
+                            </span>
+                            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                                1-Click Fill
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setData({
+                                        email: 'admin@airsafe.ph',
+                                        password: 'password123',
+                                        remember: true
+                                    });
+                                }}
+                                className="p-2.5 bg-white hover:bg-emerald-600 hover:text-white border border-emerald-100 rounded-xl text-left transition-all group shadow-sm active:scale-95"
+                            >
+                                <div className="text-[10px] font-black tracking-wide text-stone-900 group-hover:text-white uppercase flex items-center gap-1">
+                                    🛡️ MDRRMO Admin
+                                </div>
+                                <div className="text-[9px] font-semibold text-stone-500 group-hover:text-emerald-100 truncate mt-0.5">
+                                    admin@airsafe.ph
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setData({
+                                        email: 'official@brgy7.ph',
+                                        password: 'password123',
+                                        remember: true
+                                    });
+                                }}
+                                className="p-2.5 bg-white hover:bg-emerald-600 hover:text-white border border-emerald-100 rounded-xl text-left transition-all group shadow-sm active:scale-95"
+                            >
+                                <div className="text-[10px] font-black tracking-wide text-stone-900 group-hover:text-white uppercase flex items-center gap-1">
+                                    🏛️ Brgy Official
+                                </div>
+                                <div className="text-[9px] font-semibold text-stone-500 group-hover:text-emerald-100 truncate mt-0.5">
+                                    official@brgy7.ph
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
                     <form onSubmit={handleSignIn} className="space-y-4 lg:space-y-5">
                         <div className="group">
                             <label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest text-stone-400 block mb-2 ml-1 group-focus-within:text-stone-900 transition-colors">Work Email</label>

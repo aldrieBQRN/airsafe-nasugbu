@@ -1,0 +1,66 @@
+name: IoT Data Simulator & Heartbeat
+
+on:
+  schedule:
+    # Runs every 15 minutes (standard GitHub Actions cron)
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  simulate-telemetry:
+    name: Send Simulated IoT Telemetry
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📡 Generate and Send Telemetry Data
+        run: |
+          # Calculate realistic climate values based on current UTC hour (+8 for PH Time)
+          UTC_HOUR=$(date -u +%H)
+          PH_HOUR=$(( (UTC_HOUR + 8) % 24 ))
+          
+          # Temperature approximation (Nasugbu Climate)
+          if [ "$PH_HOUR" -ge 11 ] && [ "$PH_HOUR" -le 15 ]; then
+            TEMP=$((RANDOM % 4 + 31)).$((RANDOM % 9))
+            HUM=$((RANDOM % 15 + 55))
+          else
+            TEMP=$((RANDOM % 4 + 25)).$((RANDOM % 9))
+            HUM=$((RANDOM % 15 + 75))
+          fi
+          
+          # Heat index estimate
+          HEAT_INDEX=$(echo "$TEMP + ($HUM / 20)" | bc -l | awk '{printf "%.1f", $0}')
+          
+          # AQI with commute hour spikes
+          if { [ "$PH_HOUR" -ge 7 ] && [ "$PH_HOUR" -le 9 ]; } || { [ "$PH_HOUR" -ge 17 ] && [ "$PH_HOUR" -le 19 ]; }; then
+            AQI=$((RANDOM % 40 + 70))
+          else
+            AQI=$((RANDOM % 25 + 20))
+          fi
+          
+          # Hazardous gas level (ppm)
+          GAS=$((RANDOM % 200 + 150))
+
+          APP_URL="${{ secrets.APP_URL }}"
+          DEVICE_ID="${{ secrets.DEVICE_ID || 'NODE-001' }}"
+          API_TOKEN="${{ secrets.DEVICE_API_TOKEN }}"
+
+          if [ -z "$APP_URL" ] || [ -z "$API_TOKEN" ]; then
+            echo "::warning:: APP_URL or DEVICE_API_TOKEN secret is not configured yet. Skipping."
+            exit 0
+          fi
+
+          echo "Posting telemetry to $APP_URL/api/telemetry..."
+          echo "Payload: Temp=$TEMP°C, Hum=$HUM%, HeatIdx=$HEAT_INDEX°C, AQI=$AQI, Gas=$GAS"
+
+          curl -s -X POST "$APP_URL/api/telemetry" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            -d "{
+              \"device_id\": \"$DEVICE_ID\",
+              \"api_token\": \"$API_TOKEN\",
+              \"temperature\": $TEMP,
+              \"humidity\": $HUM,
+              \"heat_index\": $HEAT_INDEX,
+              \"aqi\": $AQI,
+              \"hazardous_gas_level\": $GAS
+            }"

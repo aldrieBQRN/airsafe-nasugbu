@@ -24,8 +24,9 @@ return Application::configure(basePath: dirname(__DIR__))
             return route('barangay.dashboard');
         });
 
-        // 2. Appending standard Inertia and Asset middleware
+        // 2. Appending standard Inertia, Asset, and Automatic Demo Telemetry middleware
         $middleware->web(append: [
+            \App\Http\Middleware\EnsureFreshDemoTelemetry::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);

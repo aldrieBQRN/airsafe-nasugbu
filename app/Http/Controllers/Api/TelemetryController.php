@@ -58,6 +58,13 @@ class TelemetryController extends Controller
             $this->sendEmergencyEmail($device, $reading);
         }
 
+        // 6. AUTO-PRUNE OLD TELEMETRY (Retention: Last 30 Days)
+        // Probabilistic cleanup (5% chance on each ingest) ensures old data is purged
+        // even on hosting environments like InfinityFree without a system cron.
+        if (rand(1, 20) === 1) {
+            SensorReading::where('created_at', '<=', now()->subDays(30))->delete();
+        }
+
         return response()->json([
             'message' => 'Telemetry saved successfully',
             'data' => $reading

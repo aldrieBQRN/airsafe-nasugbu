@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Head, useForm, Link } from '@inertiajs/react';
 import {
     Wind, Lock, Mail, ArrowRight,
-    ChevronLeft, AlertCircle, Eye, EyeOff
+    ChevronLeft, AlertCircle, Eye, EyeOff,
+    Shield, Building
 } from 'lucide-react';
 
 export default function Login() {
@@ -70,7 +71,7 @@ export default function Login() {
                         <ChevronLeft size={14} className="group-hover:-translate-x-1" /> Back
                     </Link>
 
-                    <div className="mb-8 lg:mb-10">
+                    <div className="mb-6 lg:mb-8">
                         <h3 className="text-2xl lg:text-3xl font-black text-stone-900 tracking-tight mb-2 uppercase">Official Login</h3>
                         <p className="text-stone-500 text-sm lg:text-base font-medium">Please enter your system credentials.</p>
                     </div>
@@ -83,56 +84,91 @@ export default function Login() {
                         </div>
                     )}
 
-                    {/* --- 1-CLICK DEMO LOGIN SELECTOR (PORTFOLIO SHOWCASE) --- */}
-                    <div className="mb-6 p-4 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl">
-                        <div className="flex items-center justify-between mb-3">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                    {/* --- 1-CLICK DEMO LOGIN SELECTOR (LONG FORM UI MATCHING) --- */}
+                    <div className="mb-6 space-y-2.5">
+                        <div className="flex items-center justify-between px-1">
+                            <label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest text-stone-400 flex items-center gap-1.5">
                                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                                 Portfolio Demo Access
-                            </span>
-                            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100/80 px-2 py-0.5 rounded-md">
-                                1-Click Fill
+                            </label>
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full">
+                                1-Click Autofill
                             </span>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setData({
-                                        email: 'admin@airsafe.ph',
-                                        password: 'password123',
-                                        remember: true
-                                    });
-                                }}
-                                className="p-2.5 bg-white hover:bg-emerald-600 hover:text-white border border-emerald-100 rounded-xl text-left transition-all group shadow-sm active:scale-95"
-                            >
-                                <div className="text-[10px] font-black tracking-wide text-stone-900 group-hover:text-white uppercase flex items-center gap-1">
-                                    🛡️ MDRRMO Admin
-                                </div>
-                                <div className="text-[9px] font-semibold text-stone-500 group-hover:text-emerald-100 truncate mt-0.5">
-                                    admin@airsafe.ph
-                                </div>
-                            </button>
 
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setData({
-                                        email: 'official@brgy7.ph',
-                                        password: 'password123',
-                                        remember: true
-                                    });
-                                }}
-                                className="p-2.5 bg-white hover:bg-emerald-600 hover:text-white border border-emerald-100 rounded-xl text-left transition-all group shadow-sm active:scale-95"
-                            >
-                                <div className="text-[10px] font-black tracking-wide text-stone-900 group-hover:text-white uppercase flex items-center gap-1">
-                                    🏛️ Brgy Official
+                        {/* Admin Long Button */}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setData({
+                                    email: 'admin@airsafe.ph',
+                                    password: 'password123',
+                                    remember: true
+                                });
+                            }}
+                            className={`w-full h-14 lg:h-16 px-4 bg-stone-50 lg:bg-white border rounded-2xl flex items-center justify-between transition-all group active:scale-[0.98] ${
+                                data.email === 'admin@airsafe.ph'
+                                    ? 'border-emerald-500 ring-4 ring-emerald-100/60 bg-emerald-50/40 shadow-sm'
+                                    : 'border-stone-200 hover:border-stone-400 hover:bg-stone-100/60'
+                            }`}
+                        >
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors flex-shrink-0 ${
+                                    data.email === 'admin@airsafe.ph' ? 'bg-emerald-500 text-white' : 'bg-stone-100 text-stone-600 group-hover:bg-emerald-500 group-hover:text-white'
+                                }`}>
+                                    <Shield size={17} />
                                 </div>
-                                <div className="text-[9px] font-semibold text-stone-500 group-hover:text-emerald-100 truncate mt-0.5">
-                                    official@brgy7.ph
+                                <div className="text-left truncate">
+                                    <div className="text-xs font-black text-stone-900 uppercase tracking-tight flex items-center gap-1.5">
+                                        MDRRMO Admin
+                                        <span className="text-[8px] font-black text-emerald-800 bg-emerald-100/90 px-1.5 py-0.5 rounded uppercase tracking-wider">System Lead</span>
+                                    </div>
+                                    <div className="text-[11px] font-medium text-stone-500 truncate">
+                                        admin@airsafe.ph
+                                    </div>
                                 </div>
-                            </button>
-                        </div>
+                            </div>
+                            <div className="text-stone-300 group-hover:text-stone-900 transition-colors pl-2 flex-shrink-0">
+                                <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+                            </div>
+                        </button>
+
+                        {/* Official Long Button */}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setData({
+                                    email: 'official@brgy7.ph',
+                                    password: 'password123',
+                                    remember: true
+                                });
+                            }}
+                            className={`w-full h-14 lg:h-16 px-4 bg-stone-50 lg:bg-white border rounded-2xl flex items-center justify-between transition-all group active:scale-[0.98] ${
+                                data.email === 'official@brgy7.ph'
+                                    ? 'border-blue-500 ring-4 ring-blue-100/60 bg-blue-50/40 shadow-sm'
+                                    : 'border-stone-200 hover:border-stone-400 hover:bg-stone-100/60'
+                            }`}
+                        >
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors flex-shrink-0 ${
+                                    data.email === 'official@brgy7.ph' ? 'bg-blue-600 text-white' : 'bg-stone-100 text-stone-600 group-hover:bg-blue-600 group-hover:text-white'
+                                }`}>
+                                    <Building size={17} />
+                                </div>
+                                <div className="text-left truncate">
+                                    <div className="text-xs font-black text-stone-900 uppercase tracking-tight flex items-center gap-1.5">
+                                        Brgy 7 Official
+                                        <span className="text-[8px] font-black text-blue-800 bg-blue-100/90 px-1.5 py-0.5 rounded uppercase tracking-wider">Jurisdiction</span>
+                                    </div>
+                                    <div className="text-[11px] font-medium text-stone-500 truncate">
+                                        official@brgy7.ph
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="text-stone-300 group-hover:text-stone-900 transition-colors pl-2 flex-shrink-0">
+                                <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+                            </div>
+                        </button>
                     </div>
 
                     <form onSubmit={handleSignIn} className="space-y-4 lg:space-y-5">

@@ -44,5 +44,8 @@ require $corePath . '/vendor/autoload.php';
 /** @var Application $app */
 $app = require_once $corePath . '/bootstrap/app.php';
 
+// Set public path to the active directory where index.php and build/ assets are served
+$app->usePublicPath(__DIR__);
+
 $app->handleRequest(Request::capture());
 

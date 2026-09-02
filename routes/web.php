@@ -71,6 +71,16 @@ Route::get('/artisan-migrate', function (\Illuminate\Http\Request $request) {
         \App\Services\DemoTelemetryService::ensureFreshData();
         $output[] = "📡 [telemetry] Synchronized 30-day demo sensor records.\n";
 
+        if ($request->has('logs')) {
+            $logFile = storage_path('logs/laravel.log');
+            if (file_exists($logFile)) {
+                $lines = array_slice(file($logFile), -150);
+                $output[] = "\n📄 [storage/logs/laravel.log] Last 150 lines:\n" . implode("", $lines);
+            } else {
+                $output[] = "\n📄 [storage/logs/laravel.log] Log file is currently empty.";
+            }
+        }
+
         // Optimize and clear caches
         Artisan::call('optimize:clear');
         $output[] = "🧹 [optimize:clear] Output:\n" . Artisan::output();
